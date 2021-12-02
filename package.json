@@ -15,5 +15,8 @@
     "sqlite3": "^5.0.2",
     "telegraf": "^3.39.0",
     "underscore": "^1.13.1"
+  },
+  "scripts": {
+    "start": "node foo.js"
   }
 }
