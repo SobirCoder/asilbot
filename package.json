@@ -17,6 +17,6 @@
     "underscore": "^1.13.1"
   },
   "scripts": {
-    "start": "node foo.js"
+    "start": "node index.js"
   }
 }
