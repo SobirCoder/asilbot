@@ -1,0 +1,37 @@
+{
+    "employees": [
+        {
+            "id": 697841204,
+            "fullName": "Husniddin To’g’izov",
+            "phoneNumber": "123123123",
+            "phoneNumber2": "12",
+            "companyName": "dsa",
+            "position": "dsa",
+            "status": "out"
+        },
+        {
+            "id": 4325234,
+            "fullName": "Marjona Halilova",
+            "phoneNumber": "123123123",
+            "phoneNumber2": "12",
+            "companyName": "dsa",
+            "position": "dsa",
+            "status": "out"
+        }
+    ],
+    "attendances": [
+        {
+            "employeeId": 697841204,
+            "fullName": "Husniddin To’g’izov",
+            "date": "Wed Nov 17 2021",
+            "outTime": "4:7",
+            "inTime": "4:10",
+            "workingHours": 3,
+            "status": "out"
+        }
+    ],
+    "admins": [
+        697841205,
+        697841206
+    ]
+}
