@@ -143,8 +143,8 @@ bot.start(ctx => {
                     ctx.session.admin_step = admin_steps.indexOf('actions2');
 
                 } else {
-                    // ctx.reply('You are not authorized to use this bot');
-                    onUserStartup(ctx);
+                    ctx.reply('You are not authorized to use this bot');
+                    // onUserStartup(ctx);
                 }
             });
         }
