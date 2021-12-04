@@ -35,6 +35,7 @@ process.on('uncaughtException', (err, origin) => {
 });
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
+bot.use(session());
 
 const admin_steps = [
     'actions',
@@ -43,6 +44,11 @@ const admin_steps = [
     'delete_company',
     'add_admin',
     'delete_admin',
+    'companies',
+    'company_actions',
+    'company_actions2',
+    'report',
+    'employees',
     'employee_settings',
     'add_employee',
     'delete_employee',
@@ -82,59 +88,85 @@ const reg_steps = [
 const admin_actions = [[pref.Companies, pref.Add_Company, pref.Delete_Company], 
                        [pref.Admins, pref.Add_Admin, pref.Delete_Admin]];
 
-//start session
-bot.use(session());
-
-
-//bot launch
-bot.start(ctx => {
-    chatId = ctx.chat.id;
-    console.log(ctx.from.id);
-    console.log('session ' + ctx.session);
-
-    if (ctx.from.id == process.env.TURNIKET_ID) {
-        dquery.getAllCompanies().then(res => {
-            ctx.reply('Please choose your company:', Markup.keyboard([_.pluck(res, 'name')]).resize().extra());
-            ctx.session.step = steps.indexOf('employee');
-        });
-    } else {
-        dquery.getAllAdmins().then(res => {
-            if (_.contains(res, ctx.from.id)) {
-                ctx.reply('Hello Admin!. Please choose your action.', 
-                        Markup.keyboard(admin_actions).resize().extra());
-                ctx.session.admin = true;
-                ctx.session.last_step = 0;
-                ctx.session.admin_step = admin_steps.indexOf('actions2');
-
-            } else {
-                // ctx.reply('You are not authorized to use this bot');
-                dquery.getAllCompanies().then(res => {
-                    ctx.reply('Please choose your company:', Markup.keyboard([_.pluck(res, 'name')]).resize().extra());
-                    ctx.session.step = steps.indexOf('employee');
-                });
-            }
-        });
-    }
-});
+function onUserStartup(ctx) {
+    dquery.getAllCompanies().then(res => {
+        ctx.reply('Please choose your company:', 
+                Markup.keyboard([..._.map(_.pluck(res, 'name'), x => [x])]).resize().extra());
+        _.each(_.keys(ctx.session), k => ctx.session[k] = '');
+        ctx.session.last_step = 0;
+        ctx.session.step = steps.indexOf('employee');
+    });
+}
 
 function doAttendance(ctx, msg) {
-    dquery.getEmployee(msg)
-      .then((result) => {
-        ctx.reply('Choose action', Markup.keyboard([[pref.CHECK_IN, pref.CHECK_OUT], [pref.BACK]]).resize().extra());
-        ctx.session.employee = result;
+    dquery.getEmployee(ctx.session.company.company_id, msg)
+      .then((res) => {
+        let actions = ['in', 'out'], btns = [];
+        if (!res.last_action) res.last_action = 'out';
+
+        _.each(_.reject(actions, x => x == res.last_action), k => btns.push(pref['CHECK_' + k.toUpperCase()]));
+        ctx.session.last_action = res.last_action;
+
+        ctx.reply('Choose action', Markup.keyboard([btns, [pref.BACK]]).resize().extra());
+        ctx.session.employee = res;
         ctx.session.step = steps.indexOf('check');
     });
 }
+
+function saveAttendance(ctx, data) {
+    if (ctx.session.last_action == data.attendance_info.action ||
+            ctx.session.last_step == null && data.attendance_info.action == 'out') {
+        ctx.session.last_step = steps.indexOf('attendance');
+        ctx.reply(`You can't do the same attendance action twice or you can't check out without check in!`,
+                Markup.keyboard([[pref.BACK]]).resize().extra());
+    } else {
+        dquery.saveAttendance(data).then(() => {
+            ctx.reply('Your attendance recorded. Thank you!');
+            onUserStartup(ctx);
+        });
+    }
+}
+
+bot.start(ctx => {
+    chatId = ctx.chat.id;
+
+    dquery.foreignKeySupport().then(() => {
+        if (ctx.from.id == process.env.TURNIKET_ID) {
+            onUserStartup(ctx);
+        } else {
+            dquery.getAllAdmins().then(res => {
+                if (_.contains(res, ctx.from.id)) {
+                    ctx.reply('Hello Admin!. Please choose your action.', 
+                            Markup.keyboard(admin_actions).resize().extra());
+                    ctx.session.admin = true;
+                    ctx.session.last_step = 0;
+                    ctx.session.admin_step = admin_steps.indexOf('actions2');
+
+                } else {
+                    // ctx.reply('You are not authorized to use this bot');
+                    onUserStartup(ctx);
+                }
+            });
+        }
+    });
+});
     
 function onRegister(ctx) {
     let msg = ctx.message.text;
-    console.log('reg_step: ' + ctx.session.reg_step);
+    ctx.session.is_initial_reg_step = false;
+
+    if (msg == pref.REG_NOT_IN_THIS_LIST) {
+        ctx.session.reg_step = reg_steps.indexOf('not_in_this_list');
+    }
+
     switch (reg_steps[ctx.session.reg_step]) {
         case 'choose_from_another_company':
-            dquery.getCompanyEmployees(ctx.session.company.company_id, true).then((res) => {
+            ctx.session.last_step = steps.indexOf('employee');
+            ctx.session.is_initial_reg_step = true;
+            dquery.getOtherCompanyEmployees(ctx.session.company.company_id).then((res) => {
                 if (res.length) {
                     ctx.reply(`Choose yourself from other companies' employees!`,
-                        Markup.keyboard([ res, [pref.REG_NOT_IN_THIS_LIST]]).oneTime().resize());
+                        Markup.keyboard([ ...res, [pref.REG_NOT_IN_THIS_LIST, pref.BACK]]).resize().extra());
                     ctx.session.reg_step = reg_steps.indexOf('in_this_list');
                 } else {
                     ctx.reply('Enter your full name', Markup.keyboard([[pref.BACK]]).resize().extra());
@@ -143,31 +175,31 @@ function onRegister(ctx) {
             });
             break;
          case 'in_this_list':
-            dquery.getEmployee(msg).then((res) => {
-                dquery.saveCompanyEmployee({company_id: ctx.session.company.company_id,employee_id: res.employee_id }, 
-                () => {
-                    ctx.session.employee = { employee_id: res.employee_id, name: msg };
+            ctx.session.last_reg_step = reg_steps.indexOf('choose_from_another_company');
+            dquery.getEmployee(ctx.session.company.company_id, msg).then((res) => {
+                dquery.saveCompanyEmployee({company_id: ctx.session.company.company_id,employee_id: res.employee_id }).then(() => {
+                    console.log('hello');
                     ctx.reply(`You are assigned to '${ctx.session.company.name}'.`);
                     ctx.session.reg_step = '';
-                    ctx.reply('Choose attendance action', Markup.keyboard([pref.CHECK_IN, pref.CHECK_OUT], [pref.BACK]));
+                    ctx.session.last_reg_step = '';
+                    doAttendance(ctx, msg);
                 });
             });
             break;
         case 'not_in_this_list':
-            ctx.reply('Enter your full name');
+            ctx.session.last_reg_step = reg_steps.indexOf('choose_from_another_company');
+            ctx.reply('Enter your full name', Markup.keyboard([[pref.BACK]]).resize().extra());
             ctx.session.reg_step = reg_steps.indexOf('register');
             break;
         case 'register':
+            ctx.session.last_step = steps.indexOf('employee');
             dquery.saveEmployee(msg).then(() => {
-                console.log('saveEmployee');
-                dquery.getEmployee(msg).then(res => {
-                    console.log('getEmployee', res, ctx.session);
+                dquery.getEmployee(ctx.session.company.company_id, msg).then(res => {
                     dquery.saveCompanyEmployee({ company_id: ctx.session.company.company_id, 
-                                                 employee_id: res.employee_id }).then(
-                    () => {
-                        console.log('saveCompanyEmployee');
+                                                 employee_id: res.employee_id }).then(() => {
                         ctx.reply(`You are registered and assigned to '${ctx.session.company.name}'.`);
                         ctx.session.reg_step = '';
+                        ctx.session.last_reg_step = '';
                         doAttendance(ctx, msg);
                     });
                 });
@@ -185,46 +217,46 @@ function handleUserInput(ctx, msg) {
         ctx.session.step = steps.indexOf('register');
     }
 
-    if (msg == pref.BACK) { 
-        if (ctx.session.step == steps.indexOf('register')) {
-            ctx.session.reg_step = '';
-            ctx.session.step--;
-        } else if (ctx.session.step > steps.indexOf('register')) {
-            ctx.session.step -= 3;
-        } else ctx.session.step -= 2;
+    if (msg == pref.BACK) {
+        if (steps[ctx.session.step] == 'register') {
+            if (ctx.session.is_initial_reg_step) {
+                ctx.session.reg_step = '';
+                ctx.session.last_reg_step = '';
+                ctx.session.step = ctx.session.last_step
+            } else ctx.session.reg_step = ctx.session.last_reg_step;
+        } else ctx.session.step = ctx.session.last_step;
     }
-    // console.log(ctx.session.reg_step + ' : ' + ctx.session.step);
+
     onRegister(ctx);
 
-    if (steps[ctx.session.step] == 'register') {
-        return;
-    }
+    if (steps[ctx.session.step] == 'register') return;
 
     switch (steps[ctx.session.step]) {
         case 'company':
-            dquery.getAllCompanies().then(res => {
-                ctx.reply('Please choose your company:', Markup.keyboard([_.pluck(res, 'name')]).resize().extra());
-                ctx.session.step = steps.indexOf('employee');
-            });
+            onUserStartup(ctx);
             break;
         case 'employee':
+            ctx.session.last_step = steps.indexOf('company');
             dquery.getCompany((ctx.session.company || {}).name || msg).then((comp) => {
                 dquery.getCompanyEmployees(comp.company_id).then(res => {
                     ctx.reply('Choose yourself from employee list. If you are not in the list, then register yourself', 
-                    Markup.keyboard([..._.map(res, k => [k]), [pref.REG_EMPLOYEE, pref.BACK]]).resize().extra());
+                            Markup.keyboard([...res, [pref.REG_EMPLOYEE, pref.BACK]]).resize().extra());
                     ctx.session.company = comp;
                     ctx.session.step = steps.indexOf('attendance');
                 });
             });
             break;
         case 'attendance':
-            doAttendance(ctx, msg);
+            ctx.session.last_step = steps.indexOf('employee');
+            doAttendance(ctx, msg != pref.BACK ? msg : ctx.session.last_emp);
+            if (msg != pref.BACK) ctx.session.last_emp = msg;
             break;
         case 'check':
+            ctx.session.last_step = steps.indexOf('attendance');
             ctx.session.action = msg.toLowerCase();
             let now = util.now();
             ctx.session.dateTime = now;
-            switch(msg) {
+            switch(msg != pref.BACK ? msg : ctx.session.last_check) {
                 case pref.CHECK_IN:
                     util.checkInput(ctx.session.employee.employee_id)
                         .then((res) => {
@@ -244,7 +276,7 @@ function handleUserInput(ctx, msg) {
                                                            date: now.date },
                                             attendance_info: { action: ctx.session.action, time: now.time, 
                                                                is_in_time: pref.YES }};
-                                util.saveAttendance(ctx, data);
+                                saveAttendance(ctx, data);
                             }
                         });
                     break;
@@ -266,20 +298,24 @@ function handleUserInput(ctx, msg) {
                                                    date: now.date },
                                 attendance_info: { action: ctx.session.action, time: now.time, 
                                                    is_in_time: pref.YES }};
-                        util.saveAttendance(ctx, data);
+                        saveAttendance(ctx, data);
                     }
                     break;
             }
+            if (msg != pref.BACK) ctx.session.last_check = msg;
             break;
         case 'not_in_time':
-            if (msg == pref.APPROVED_REASON) {
+            ctx.session.last_step = steps.indexOf('check');
+            let message = msg != pref.BACK ? msg : ctx.session.last_nit;        
+
+            if (message == pref.APPROVED_REASON) {
                 ctx.reply('Please write your approved reason.', Markup.keyboard([[pref.BACK]]).resize().extra());
                 ctx.session.step = steps.indexOf('not_in_time_reason');
             } else {
                 data = { attendance: { employee_id: ctx.session.employee.employee_id, 
                                            company_id: ctx.session.company.company_id,
                                            date: ctx.session.dateTime.date }};
-                if (msg == pref.WORK_OF_OFFICE) {
+                if (message == pref.WORK_OF_OFFICE) {
                     data.attendance_info = { action: ctx.session.action,
                                              time: ctx.session.dateTime.time,
                                              is_in_time: pref.NO,
@@ -291,12 +327,12 @@ function handleUserInput(ctx, msg) {
                                              reason: pref.MY_OWN_BUSINESS_TC,
                                              penalty: ctx.session.penalty };
                 }
-                util.saveAttendance(ctx, data);
-                ctx.session = {};
-                ctx.session.step = 0;
+                saveAttendance(ctx, data);
             }
+            if (msg != pref.BACK) ctx.session.last_nit = msg;
             break;
         case 'not_in_time_reason':
+            ctx.session.last_step = steps.indexOf('not_in_time');
             data = { attendance: { employee_id: ctx.session.employee.employee_id, 
                                                     company_id: ctx.session.company.company_id,
                                                     date: ctx.session.dateTime.date },
@@ -305,9 +341,7 @@ function handleUserInput(ctx, msg) {
                                                     is_in_time: pref.NO,
                                                     reason: pref.APPROVED_REASON_TC,
                                                     user_reason: msg.trim().replace(`'`, `''`) }};
-            util.saveAttendance(ctx, data);
-            ctx.session = {};
-            ctx.session.step = 0;
+            saveAttendance(ctx, data);
             break;
         default:
             break;
@@ -336,17 +370,14 @@ function handleAdminInput(ctx, msg) {
             break;
         case 'actions2':
             ctx.session.last_step = admin_steps.indexOf('actions');
-            switch(msg) {
+            switch(msg != pref.BACK ? msg : ctx.session.last_action) {
                 case pref.Companies:
-                    ctx.reply('Companies:', 
-                            Markup.keyboard([[pref.Add_Company, pref.Delete_Company], [pref.BACK]]).resize().extra());
                     dquery.getAllCompanies().then(res => {
-                        _.each(res, cmp => {
-                            ctx.reply(cmp.name, Markup.inlineKeyboard([
-                                Markup.callbackButton('Employees', `employees--${ cmp.company_id }`),
-                                Markup.callbackButton('Report', `report--${ cmp.company_id }`)
-                            ]).extra());
-                        });
+                        ctx.reply('Choose a company:', 
+                                Markup.keyboard([..._.map(res, x => [`'${x.name}'`]), [pref.BACK]]).resize().extra());
+                        ctx.session.company_id = '';
+                        ctx.session.company_name = '';
+                        ctx.session.admin_step = admin_steps.indexOf('company_actions');
                     });
                     break;
                 case pref.Add_Company:
@@ -355,7 +386,6 @@ function handleAdminInput(ctx, msg) {
                     break;
                 case pref.Delete_Company:
                     dquery.getAllCompanies().then(res => {
-                        console.log(res);
                         ctx.reply('Choose company to delete',
                                 Markup.keyboard([..._.map(res, x => [`'${x.name}'`]), [pref.BACK]]).resize().extra());
                         ctx.session.admin_step = admin_steps.indexOf('delete_company');
@@ -380,9 +410,10 @@ function handleAdminInput(ctx, msg) {
                     break;
                 default: break;
             }
+            if (msg != pref.BACK) ctx.session.last_action = msg;
             break;
         case 'add_company':
-            ctx.session.last_step = admin_steps.indexOf('actions');
+            ctx.session.last_step = admin_steps.indexOf('actions2');
             dquery.saveCompany(msg).then(() => {
                 ctx.reply('Company saved', 
                     Markup.keyboard(admin_actions).resize().extra());
@@ -390,7 +421,7 @@ function handleAdminInput(ctx, msg) {
             });
             break;
         case 'delete_company':
-            ctx.session.last_step = admin_steps.indexOf('actions');
+            ctx.session.last_step = admin_steps.indexOf('actions2');
             dquery.deleteCompany(msg.replace(/'/g, '')).then(() => {
                 ctx.reply('Company deleted',
                     Markup.keyboard(admin_actions).resize().extra());
@@ -398,7 +429,7 @@ function handleAdminInput(ctx, msg) {
             });
             break;
         case 'add_admin':
-            ctx.session.last_step = admin_steps.indexOf('actions');
+            ctx.session.last_step = admin_steps.indexOf('actions2');
             dquery.saveAdmin(msg).then(() => {
                 ctx.reply('Admin saved', 
                     Markup.keyboard(admin_actions).resize().extra());
@@ -406,37 +437,66 @@ function handleAdminInput(ctx, msg) {
             });
             break;
         case 'delete_admin':
-            ctx.session.last_step = admin_steps.indexOf('actions');
+            ctx.session.last_step = admin_steps.indexOf('actions2');
             dquery.deleteAdmin(msg.replace(/'/g, '')).then(() => {
                 ctx.reply('Admin deleted',
                     Markup.keyboard(admin_actions).resize().extra());
                 ctx.session.admin_step = admin_steps.indexOf('actions2');
             });
             break;
+        case 'company_actions':
+            ctx.session.last_step = admin_steps.indexOf('actions2');
+            msg = msg.replace(/'/g, '');
+            dquery.getCompany(msg != pref.BACK ? msg : ctx.session.company_name).then(res => {
+                ctx.session.company_id = res.company_id;
+                ctx.session.company_name = res.name;
+                ctx.session.admin_step = admin_steps.indexOf('company_actions2');
+
+                ctx.reply('Choose an action:', 
+                    Markup.keyboard([[pref.Employees, pref.Report], [pref.BACK]]).resize().extra());
+            });
+            break;
+        case 'company_actions2':
+            ctx.session.last_step = admin_steps.indexOf('company_actions');
+            switch(msg != pref.BACK ? msg : ctx.session.last_ca) {
+                case pref.Employees:
+                    ctx.reply('Choose an action',
+                        Markup.keyboard([[pref.Employee_Settings, pref.Add_Employee], 
+                                         [pref.Delete_Employee, pref.Detach_Employee],
+                                         [pref.BACK]]).resize().extra());
+                    ctx.session.admin_step = admin_steps.indexOf('employee_settings');
+                    break;
+                case pref.Report:
+                    break;
+            }
+            if (msg != pref.BACK) ctx.session.last_ca = msg;
+            break;
         case 'employee_settings':
-            ctx.session.last_step = admin_steps.indexOf('actions');
-            switch(msg) {
+            ctx.session.last_step = admin_steps.indexOf('company_actions2');
+            ctx.session.employee_id = '';
+            ctx.session.employee_name = '';
+            switch(msg != pref.BACK ? msg : ctx.session.last_empsetting) {
                 case pref.Employee_Settings:
                     dquery.getCompanyEmployees(ctx.session.company_id).then(res => {
                         ctx.reply('Choose an employee',
-                            Markup.keyboard([..._.map(res, k => [k]), [pref.BACK]]).resize().extra());
+                            Markup.keyboard([...res, [pref.BACK]]).resize().extra());
                         ctx.session.admin_step = admin_steps.indexOf('employee_setting');
                     });
                     break;
                 case pref.Add_Employee:
-                    dquery.getCompanyEmployees(ctx.session.company_id, true).then(res => {
-                        ctx.reply('Choose an employee to add to this company. If employee is not in the list please write employee full name.',
-                            Markup.keyboard([..._.map(res, k => [k]), [pref.BACK]]).resize().extra());
+                    dquery.getOtherCompanyEmployees(ctx.session.company_id).then(res => {
+                        ctx.reply(`Choose an other company's employee to add to this company.\n` +
+                                  `If employee is not in the list please write employee full name.`,
+                            Markup.keyboard([...res, [pref.BACK]]).resize().extra());
                         ctx.session.admin_step = admin_steps.indexOf('add_employee');
                     });
                     break;
                 case pref.Delete_Employee:
                     dquery.getCompanyEmployees(ctx.session.company_id).then(res => {
-                        let emps = _.map(res, k => [k]);
-                        if (!emps.length) ctx.reply('Employees not found for this company', Markup.keyboard([[pref.BACK]]).resize().extra());
+                        if (!res.length) ctx.reply('Employees not found for this company', Markup.keyboard([[pref.BACK]]).resize().extra());
                         else { 
                             ctx.reply('Choose an employee to delete',
-                                    Markup.keyboard([...emps, [pref.BACK]]).resize().extra());
+                                    Markup.keyboard([...res, [pref.BACK]]).resize().extra());
                             ctx.session.admin_step = admin_steps.indexOf('delete_employee');
                         }
                     });
@@ -444,14 +504,15 @@ function handleAdminInput(ctx, msg) {
                 case pref.Detach_Employee:
                     dquery.getCompanyEmployees(ctx.session.company_id).then(res => {
                         ctx.reply('Choose an employee to detach from this company',
-                            Markup.keyboard([..._.map(res, k => [k]), [pref.BACK]]).resize().extra());
+                            Markup.keyboard([...res, [pref.BACK]]).resize().extra());
                         ctx.session.admin_step = admin_steps.indexOf('detach_employee');
                     });
                     break;
             }   
+            if (msg != pref.BACK) ctx.session.last_empsetting = msg;
             break;
         case 'add_employee':
-            ctx.session.last_step = admin_steps.indexOf('actions2');
+            ctx.session.last_step = admin_steps.indexOf('employee_settings');
             dquery.getAllEmployees().then(res => {
                 ctx.session.admin_step = admin_steps.indexOf('employee_settings');
                 if ((emp = _.find(res, x => x.name == msg))) {
@@ -463,7 +524,7 @@ function handleAdminInput(ctx, msg) {
                     });
                 } else {
                     dquery.saveEmployee(msg).then(() => {
-                        dquery.getEmployee(msg).then(res => {
+                        dquery.getEmployee(ctx.session.company_id, msg).then(res => {
                             dquery.saveCompanyEmployee({ company_id: ctx.session.company_id, 
                                                          employee_id: res.employee_id }).then(
                             () => {
@@ -476,7 +537,7 @@ function handleAdminInput(ctx, msg) {
             });
             break;
         case 'delete_employee':
-            ctx.session.last_step = admin_steps.indexOf('actions2');
+            ctx.session.last_step = admin_steps.indexOf('employee_settings');
             dquery.deleteEmployee(msg).then(res => {
                 ctx.reply(`Employee ${msg} deleted totally.`, 
                         Markup.keyboard(employee_actions).resize().extra());
@@ -484,8 +545,8 @@ function handleAdminInput(ctx, msg) {
             });
             break;
         case 'detach_employee':
-            ctx.session.last_step = admin_steps.indexOf('actions2');
-            dquery.getEmployee(msg).then(res => {
+            ctx.session.last_step = admin_steps.indexOf('employee_settings');
+            dquery.getEmployee(ctx.session.company.company_id, msg).then(res => {
                 dquery.detachCompanyEmployee({ company_id: ctx.session.company_id, employee_id: res.employee_id }).then(() => {
                     ctx.reply(`Employee ${msg} deleted from this company.`, 
                             Markup.keyboard(employee_actions).resize().extra());
@@ -494,11 +555,11 @@ function handleAdminInput(ctx, msg) {
             });
             break;
         case 'employee_setting':
-            ctx.session.last_step = admin_steps.indexOf('actions');
+            ctx.session.last_step = admin_steps.indexOf('employee_settings');
             if (ctx.session.employee_id) {
                 util.getEmployeeInfo(ctx, ctx.session.company_id, ctx.session.employee_id, ctx.session.employee_name);
             } else {
-                dquery.getEmployee(msg).then(res => {
+                dquery.getEmployee(ctx.session.company_id, msg).then(res => {
                     ctx.tg.deleteMessage(ctx.chat.id, ctx.message.message_id);
                     ctx.session.employee_id = res.employee_id;
                     ctx.session.employee_name = res.name;
@@ -509,7 +570,7 @@ function handleAdminInput(ctx, msg) {
             break;
         case 'employee_actions':
             ctx.session.last_step = admin_steps.indexOf('employee_setting');
-            switch(msg == pref.BACK ? ctx.session.prev_emp_action : msg) {
+            switch(msg != pref.BACK ? msg : ctx.session.prev_emp_action) {
                 case pref.Custom_Late_Times:
                     ctx.reply('Choose an action:',
                                 Markup.keyboard([[pref.Add_Custom_Late_Time, pref.Delete_Custom_Late_Time, 
@@ -545,8 +606,8 @@ function handleAdminInput(ctx, msg) {
             ctx.session.last_step = admin_steps.indexOf('employee_actions');
             switch(msg) {
                 case pref.Add_Custom_Late_Time:
-                    ctx.reply(`Please write start time and end time and penalty 
-                               hours with space between them. Ex. 09:15 09:30 1`, Markup.keyboard([[pref.BACK]]).resize().extra());
+                    ctx.reply(`Please write start time and end time and penalty\n` +
+                               `hours with space between them. Ex. 09:15 09:30 1`, Markup.keyboard([[pref.BACK]]).resize().extra());
                     ctx.session.admin_step = admin_steps.indexOf('add_custom_late_time');
                     break;
                 case pref.Delete_Custom_Late_Time:
@@ -565,7 +626,7 @@ function handleAdminInput(ctx, msg) {
             break;
         case 'add_custom_late_time':
             ctx.session.last_step = admin_steps.indexOf('employee_actions');
-            args = msg.split(/\s+/);
+            args = msg.split(/\s+|-/);
             param = { company_id: ctx.session.company_id, employee_id: ctx.session.employee_id, 
                 start_time: args[0], end_time: args[1], penalty: args[2]};
 
@@ -609,13 +670,13 @@ function handleAdminInput(ctx, msg) {
         case 'custom_work_hours_week':
             ctx.session.last_step = admin_steps.indexOf('employee_actions');
             ctx.session.week_day = msg;
-            ctx.reply('Write start time and end time with space between them. Ex: 09:00-18:00', 
+            ctx.reply('Write start time and end time with space between them. Ex: 09:00 18:00', 
                     Markup.keyboard([[pref.BACK]]).resize().extra());
             ctx.session.admin_step = admin_steps.indexOf('add_custom_work_hours');
             break;
         case 'add_custom_work_hours':
             ctx.session.last_step = admin_steps.indexOf('employee_actions');
-            args = msg.split('-');
+            args = msg.split(/\s+|-/);
             data = { company_id: ctx.session.company_id, employee_id: ctx.session.employee_id, 
                          week_day: ctx.session.week_day.substring(0, 3).toLowerCase(), in_time: args[0], out_time: args[1] };
             dquery.saveEmployeeCustomWorkHours(data).then(() => {
@@ -642,7 +703,7 @@ function handleAdminInput(ctx, msg) {
             ctx.session.admin_step = admin_steps.indexOf('make_attendance_save');
             break;
         case 'make_attendance_save':
-            ctx.session.last_step = admin_steps.indexOf('employee_actions');
+            ctx.session.last_step = admin_steps.indexOf('employee_setting');
             data = { company_id: ctx.session.company_id, employee_id: ctx.session.employee_id, 
                          date: ctx.session.attendance_date, hours: msg };
             util.makeAttendance(data).then(() => {
@@ -651,7 +712,7 @@ function handleAdminInput(ctx, msg) {
             });
             break;
         case 'delete_attendance':
-            ctx.session.last_step = admin_steps.indexOf('employee_actions');
+            ctx.session.last_step = admin_steps.indexOf('employee_setting');
             dquery.deleteEmployeeAttendance(ctx.session.company_id, ctx.session.employee_id, 
                                             util.format(msg.split(/\s+/)[0])).then(() => {
                 ctx.reply(`Attendance for ${msg} is deleted for this employee`, 
@@ -666,25 +727,11 @@ function handleAdminInput(ctx, msg) {
 //bot on text message
 bot.on('text', ctx => {
     let msg = ctx.message.text.trim();
-
     if (ctx.session.admin) {
         handleAdminInput(ctx, msg);
     } else {
         handleUserInput(ctx, msg);
     }
 });
-
-bot.action(/employees--(\d+)/, ctx => {
-    var company_id = ctx.match[1];
-    ctx.session.company_id = company_id;
-
-    ctx.reply('Choose an action',
-        Markup.keyboard([[pref.Employee_Settings, pref.Add_Employee], 
-                         [pref.Delete_Employee, pref.Detach_Employee],
-                         [pref.BACK]]).resize().extra());
-    ctx.session.last_step = admin_steps.indexOf('actions');
-    ctx.session.admin_step = admin_steps.indexOf('employee_settings');
-});
-
 
 bot.launch((err) => console.log(err));

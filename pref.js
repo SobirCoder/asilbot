@@ -29,6 +29,9 @@ class Pref {
 	static get Add_Admin() { return 'Add Admin'; }
 	static get Delete_Admin() { return 'Delete Admin'; }
 
+	static get Employees() { return 'Employees'; }
+	static get Report() { return 'Report'; }
+
 	static get Employee_Settings() { return 'Employee Settings'; }
 	static get Add_Employee() { return 'Add Employee'; }
 	static get Delete_Employee() { return 'Delete Employee'; }

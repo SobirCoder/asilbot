@@ -12,9 +12,6 @@ const penaltyIntervals = [['09:16', '09:30', 1],
 												  ['10:31', '11:00', 3],
 												  ['11:01', '12:00', 4]];
 
-
-let dt = moment('23-11-2021 15:30:32', 'DD-MM-YYYY HH:mm:ss');
-
 function mapTimeDetails(intervals) {
 	return _.map(intervals, (x, i) => {
 					x[0] += ':00:00';
@@ -36,38 +33,42 @@ const defPenalties = mapTimeDetails(penaltyIntervals);
 
 class Util {
 	static now() {
-		return { date: moment().format('DD-MM-YYYY'), time: moment().format('HH:mm:ss')};
+		return { date: moment().format('YYYY.MM.DD'), time: moment().format('HH:mm') };
 	}
 
 	static format(day) {
-		return moment(day, 'DD.MM.YYYY').format('YYYY.MM.DD')
+		return moment(day, 'DD.MM.YYYY').format('YYYY.MM.DD');
 	}
 
 	static reformat(day) {
 		return moment(day, 'YYYY.MM.DD').format('DD.MM.YYYY');
 	}
 
-	static checkInput(employee_id) {
+	static checkInput(company_id, employee_id) {
 		return new Promise((resolve, rej) => {
-			let result, in_time = moment('09:00:00', 'HH:mm:ss'), now = moment(), penaltyHours, date = moment().format('DD-MM-YYYY');
-			let diffMinutes = now.diff(in_time, 'minutes'), time = now.format('HH:mm:ss');
+			dquery.getEmployeeEarliestWorkHour(company_id, employee_id).then(res => {
+				let result, in_time = moment('09:00:00', 'HH:mm:ss'), now = moment(), penaltyHours,
+					date = moment().format('YYYY.MM.DD');
+				if (res.in_time) {
+					in_time = moment(res.in_time, 'HH:mm');
+				}
 
-			console.log(diffMinutes)
+				let diffMinutes = now.diff(in_time, 'minutes'), time = now.format('HH:mm:ss');
 
-			if (diffMinutes > 15) {
-				dquery.getEmployeeCustomLateTimes(employee_id)
-						  .then((result) => {
-						  	if (result && result.length) {
-						  		penaltyHours = findPenalty(mapTimeDetails(result), time);
-						  	} else {
-						  		penaltyHours = findPenalty(defPenalties, time);
-						  	}
+				if (diffMinutes > 15) {
+					dquery.getEmployeeCustomLateTimes(employee_id)
+							  .then((result) => {
+							  	if (result && result.length) {
+							  		penaltyHours = findPenalty(mapTimeDetails(result), time);
+							  	} else {
+							  		penaltyHours = findPenalty(defPenalties, time);
+							  	}
 
-						  	let lateHours = diffMinutes / 60, lateMinutes = diffMinutes - 60 * lateHours;
-						  	resolve({ is_in_time: pref.NO, penaltyHours,
-						  						lateHours, lateMinutes });
-						  });
-			} else resolve({ is_in_time: pref.YES, date });
+							  	let lateHours = Math.round(diffMinutes / 60), lateMinutes = diffMinutes - 60 * lateHours;
+							  	resolve({ is_in_time: pref.NO, penaltyHours, lateHours, lateMinutes });
+							  });
+				} else resolve({ is_in_time: pref.YES, date });
+			});
 		});
 	}
 
@@ -75,17 +76,10 @@ class Util {
 		let out_time = moment('18:00:00', 'HH:mm:ss'), now = moment(), status;
 	  let diffMinutes = out_time.diff(now, 'minutes'), time = now.format('HH:mm:ss');
 	  if (diffMinutes > 0) {
-	  	let earlyHours = diffMinutes / 60, earlyMinutes = diffMinutes - 60 * earlyHours;
+	  	let earlyHours = Math.round(diffMinutes / 60), earlyMinutes = diffMinutes - 60 * earlyHours;
 	  	return { is_in_time: pref.NO, earlyHours, earlyMinutes };
 	  }
 	  return { is_in_time: pref.YES };
-	}
-
-	static saveAttendance(ctx, data) {
-    dquery.saveAttendance(data).then(() => {
-        ctx.reply('Your attendance recorded. Thank you!');
-        ctx.session.step = 0;
-    });
 	}
 
 	static getWeekDay(code) {
@@ -104,13 +98,14 @@ class Util {
 	                                 date: data.date },
 	              attendance_info: { action: 'in', time: '09:00', 
 	                                 is_in_time: pref.YES }};
-
+	    if (data.hours > 4) data.hours++;
+	                                 
 	    dquery.saveAttendance(param).then(() => {
 	    	param.attendance_info.action = 'out';
 	    	param.attendance_info.time = moment('09:00:00', 'HH:mm:ss').add(data.hours, 'hours').format('HH:mm');
 	    	dquery.saveAttendance(param).then(() => {
 	    		res();
-	    	})
+	    	});
 	    });
 		});
 	}

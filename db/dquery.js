@@ -16,6 +16,16 @@ function reformat(day) {
 }
 
 class Dquery {
+	static foreignKeySupport() {
+		return new Promise((res, rej) => {
+			db.run(`PRAGMA foreign_keys = ON`, {},
+			(err) => {
+				if (err) throw err;
+				res();
+			});
+		});
+	}
+
 	static saveAdmin(admin_id) {
 		return new Promise((res, rej) => {
 			db.run(`insert into admins(admin_id) values($id)`,
@@ -101,18 +111,36 @@ class Dquery {
 		});
 	}
 
-	static getCompanyEmployees(company_id, is_out) {
+	static getCompanyEmployees(company_id) {
 		return new Promise((res, reject) => {
 			let employees = [];
 			db.each(`select name from employees t 
 								where exists(select 1 from company_employees s 
-															where s.company_id ${is_out ? '<>' : '='} $company_id
+															where s.company_id = $company_id
 															  and s.employee_id = t.employee_id)`, 
 															  { $company_id: company_id }, (err, row) => {
 				if (err) throw err;
-				employees.push(row.name);
+				employees.push([row.name]);
 			}, (err, count) => { 
-				console.log('getAllEmployees');
+				res(employees); 
+			});
+		});
+	}
+
+	static getOtherCompanyEmployees(company_id) {
+		return new Promise((res, reject) => {
+			let employees = [];
+			db.each(`select name from employees t 
+								where exists(select 1 from company_employees s 
+															where s.company_id <> $company_id
+															  and s.employee_id = t.employee_id
+															  and not exists (select 1 from company_employees w 
+																					where w.company_id = $company_id
+																					  and w.employee_id = s.employee_id))`, 
+															  { $company_id: company_id }, (err, row) => {
+				if (err) throw err;
+				employees.push([row.name]);
+			}, (err, count) => { 
 				res(employees); 
 			});
 		});
@@ -130,12 +158,23 @@ class Dquery {
 		});
 	}
 
-	static getEmployee(employee_name) {
+	static getEmployee(company_id, employee_name) {
 		return new Promise((res, rej) => {
 			let emp;
-			db.get('select * from employees t where t.name = $name', { $name: employee_name }, (err, row) => {
+			db.get(`select t.*, (select s.action
+														 from attendances w 
+														 join attendance_infos s
+														   on s.attendance_id = w.attendance_id
+														 where w.company_id = $cmp_id
+														   and w.employee_id = t.employee_id
+														   and w.date = $date
+														 order by s.time desc
+														    limit 1) last_action
+								from employees t 
+							 where t.name = $name`, 
+					  	{ $cmp_id: company_id, $name: employee_name, $date: moment().format('YYYY.MM.DD') }, (err, row) => {
 				if (err) throw err;
-				res({ employee_id: row.employee_id, name: row.name });
+				res(row);
 			});
 		});
 	}
@@ -275,12 +314,6 @@ class Dquery {
 		});
 	}
 
-	static getEmployeeNotAttendanceDays(company_id, employee_id) {
-		return new Promise((res, rej) => {
-			db.each('')
-		});
-	}
-
 	static saveAttendanceInfo(info, callback) {
 		db.run(`insert into attendance_infos(attendance_id, action, time, is_in_time, reason, user_reason, penalty)
 						  values ($att_id, $action, $time, $is_in_time, $reason, $user_reason, $penalty)`,
@@ -385,7 +418,7 @@ class Dquery {
 						   where t.company_id = $cmp_id
 						     and t.employee_id = $emp_id
 						   and t.date >= $date`,
-					{ $cmp_id: company_id, $emp_id: employee_id, $date: now.format('YYYY.MM.DD') }, 
+					{ $cmp_id: company_id, $emp_id: employee_id, $date: moment().startOf('month').format('YYYY.MM.DD') }, 
 					(err, row) => {
 						if (err) throw err;
 						if (row.dates) {
@@ -416,6 +449,22 @@ class Dquery {
 						if (err) throw err;
 						res(dates);
 				});
+		});
+	}
+
+	static getEmployeeEarliestWorkHour(company_id, employee_id) {
+		return new Promise((res, rej) => {
+			let emp;
+			db.get(`select t.in_time
+							  from employee_custom_work_day_times t
+						   where t.company_id = $cmp_id
+						     and t.employee_id = $emp_id
+						   order by t.in_time
+						   limit 1`,
+					  	{ $cmp_id: company_id, $emp_id: employee_id }, (err, row) => {
+				if (err) throw err;
+				res(row || {});
+			});
 		});
 	}
 
