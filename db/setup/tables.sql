@@ -27,6 +27,7 @@ create table attendances(
     company_id integer not null,
     date text not null,
     working_hours numeric,
+    is_marked_by_admin text,
     constraint attendances_u1 unique (employee_id, company_id, date),
     constraint attendances_f1 foreign key (company_id) references companies(company_id) on delete cascade,
     constraint attendances_f2 foreign key(employee_id) references employees(employee_id) on delete cascade,
@@ -81,17 +82,6 @@ create table employee_custom_work_day_times (
 
 create index employee_custom_work_day_times_i1 on employee_custom_work_day_times(company_id, employee_id);
 
-
--- create table employee_custom_late_times(
---     employee_id integer primary key not null,
---     start_time text not null,
---     end_time text not null,
---     exception_time numeric,
---     constraint employee_working_scheludes_f1 foreign key(employee_id) references employees(employee_id)
--- );
-
 select * from attendances;
 
 delete from employees;
-
---insert into admins(admin_id) values(582204502);

@@ -2,6 +2,7 @@ const moment = require('moment');
 const sqlite = require('sqlite3').verbose();
 const _ = require('underscore');
 const pref = require('../pref.js');
+const time_util = require('../time_util.js');
 let db = new sqlite.Database('./db/dbase.db');
 
 const weekDays = [pref.Monday,pref.Tuesday,pref.Wednesday,pref.Thursday,
@@ -12,7 +13,7 @@ function getWeekDay(code) {
 }
 
 function reformat(day) {
-	return moment(day, 'YYYY.MM.DD').format('DD.MM.YYYY');
+	return time_util.getMoment(day, 'YYYY.MM.DD').format('DD.MM.YYYY');
 }
 
 class Dquery {
@@ -172,7 +173,8 @@ class Dquery {
 														    limit 1) last_action
 								from employees t 
 							 where t.name = $name`, 
-					  	{ $cmp_id: company_id, $name: employee_name, $date: moment().format('YYYY.MM.DD') }, (err, row) => {
+					  	{ $cmp_id: company_id, $name: employee_name, 
+					  		$date: time_util.getMoment().format('YYYY.MM.DD') }, (err, row) => {
 				if (err) throw err;
 				res(row);
 			});
@@ -185,7 +187,6 @@ class Dquery {
 			{ $name: employee_name },
 			(err) => {
 				if (err) throw err;
-				console.log('done');
 				res();
 			});
 		});
@@ -208,7 +209,6 @@ class Dquery {
 			{ $cmp_id: data.company_id, $emp_id: data.employee_id },
 			(err) => {
 				if (err) throw err;
-				console.log('done saveCompanyEmployee');
 				res();
 			});
 		});
@@ -327,9 +327,10 @@ class Dquery {
 
 	static saveAttendanceWithInfo(data, callback) {
 		let attendance = data.attendance, info = data.attendance_info;
-		let param = { $emp_id: attendance.employee_id, $cmp_id: attendance.company_id, $date: attendance.date };
-		db.run(`insert into attendances(employee_id, company_id, date)
-							values($emp_id, $cmp_id, $date)`, 
+		let param = { $emp_id: attendance.employee_id, $cmp_id: attendance.company_id, 
+									$date: attendance.date, $imba: data.is_marked_by_admin };
+		db.run(`insert into attendances(employee_id, company_id, date, is_marked_by_admin)
+							values($emp_id, $cmp_id, $date, $imba)`, 
 		param,
 		(err, row) => {
 			if (err) throw err;
@@ -383,22 +384,22 @@ class Dquery {
 							    where t.company_id = $cmp_id 
 							      and t.employee_id = $emp_id
 							      and t.date >= $date`, 
-						{ $cmp_id: company_id, $emp_id: employee_id, $date: moment().startOf('month').format('YYYY.MM.DD') }, 
+						{ $cmp_id: company_id, $emp_id: employee_id, $date: time_util.getMoment().startOf('month').format('YYYY.MM.DD') }, 
 						(err, row) => {
 							if (err) throw err;
 							let prev;
 							let total = 0;
 							if (row.times) {
 								total = _.chain(row.times.split(','))
-												 .map(x => moment(row.date + ' ' + x, 'YYYY.MM.DD HH:mm'))
+												 .map(x => time_util.getMoment(row.date + ' ' + x, 'YYYY.MM.DD HH:mm'))
 												 .reduce((memory, x, i) => {
-													 	if (i % 2 != 0) memory += x.diff(prev, 'hours');
+													 	if (i % 2 != 0) memory += x.diff(prev, 'hours', true);
 													 	prev = x;
 													 	return memory;
 												  }, 0).value();
 							}
 
-							dates.push(`${reformat(row.date)} worked: ${total} hours`);
+							dates.push(`${reformat(row.date)} worked: ${Math.round(total * 100) / 100} hours`);
 						}, (err, count) => { 
 							if (err) throw err;
 							res(dates);
@@ -408,7 +409,7 @@ class Dquery {
 
 	static getEmployeeAbcences(company_id, employee_id) {
 		return new Promise((res, rej) => {
-			let dates = [], month_dates = [], now = moment().startOf('day'), start_day = moment().startOf('month');
+			let dates = [], month_dates = [], now = time_util.getMoment().startOf('day'), start_day = time_util.getMoment().startOf('month');
 			while(now.diff(start_day, 'days') >= 0) {
 				month_dates.push(start_day.format('YYYY.MM.DD'));
 				start_day.add(1, 'days');
@@ -418,7 +419,7 @@ class Dquery {
 						   where t.company_id = $cmp_id
 						     and t.employee_id = $emp_id
 						   and t.date >= $date`,
-					{ $cmp_id: company_id, $emp_id: employee_id, $date: moment().startOf('month').format('YYYY.MM.DD') }, 
+					{ $cmp_id: company_id, $emp_id: employee_id, $date: time_util.getMoment().startOf('month').format('YYYY.MM.DD') }, 
 					(err, row) => {
 						if (err) throw err;
 						if (row.dates) {
@@ -506,6 +507,39 @@ class Dquery {
 		});
 	}
 
+	static getEmployeesAttendanceReport(company_id, dates) {
+		return new Promise((res, rej) => {
+			let reps = [], attendances = [];
+			dates = _.map(dates, x => `'${x}'`).join(',');
+			db.each(`select t.*,
+											(select group_concat(d.week_day || '-' || d.in_time || '-' || d.out_time, ',')
+									 			 from employee_custom_work_day_times d
+										 		where d.company_id = e.company_id
+										 	    and d.employee_id = e.employee_id) custom_work_hours,
+										 	(select group_concat(k.date || '-' || s.action || '-' ||
+										 						(case when k.is_marked_by_admin is not null then k.is_marked_by_admin else 'N' end) || '-' ||
+										 						(case when s.penalty is not null then s.penalty else '0' end)
+										 						|| '-' || s.time, ',')
+												 from attendances k
+												 join attendance_infos s
+												   on s.attendance_id = k.attendance_id
+												where k.company_id = e.company_id
+													and k.employee_id = e.employee_id
+													and k.date in (${dates})
+												 order by k.date, s.time) times
+									from employees t
+									join company_employees e
+									  on e.company_id = $cmp_id
+									 and e.employee_id = t.employee_id`, { $cmp_id: company_id },
+					(err, row) => {
+						if (err) throw err;
+						attendances.push(row);
+					}, (err, count) => {
+						if (err) throw err;
+						res(attendances);
+				});
+		});
+	}
 }
 
 module.exports = Dquery;

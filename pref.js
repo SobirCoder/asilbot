@@ -9,9 +9,9 @@ class Pref {
 	static get LATE() { return 'Late'; }
 
 	static get IN_TIME() { return 'In time'; }
-	static get WORK_OF_OFFICE() { return 'Work of office'; }
-	static get MY_OWN_BUSINESS() { return 'My own business'; }
-	static get APPROVED_REASON() { return 'Aproved reason'; }
+	static get WORK_OF_OFFICE() { return 'Office work'; }
+	static get MY_OWN_BUSINESS() { return 'Personal reason'; }
+	static get APPROVED_REASON() { return 'Approved reason'; }
 
 	static get YES() { return 'Y'; }
 	static get NO() { return 'N'; }
@@ -57,6 +57,11 @@ class Pref {
 	static get Friday() { return 'Friday'; }
 	static get Saturday() { return 'Saturday'; }
 	static get Sunday() { return 'Sunday'; }
+
+	static get Current_Week_Report() { return 'Current week'; }
+	static get Last_Week_Report() { return 'Last week'; }
+	static get Current_Month_Report() { return 'Current month'; }
+	static get Last_Month_Report() { return 'Last month'; }
 }
 
 module.exports = Pref;

@@ -2,6 +2,7 @@ const moment = require('moment');
 const Markup = require('telegraf/markup');
 const dquery = require('./db/dquery.js');
 const pref = require('./pref.js');
+const time_util = require('./time_util.js');
 const _ = require('underscore');
 const weekDays = [pref.Monday,pref.Tuesday,pref.Wednesday,pref.Thursday,
  									pref.Friday,pref.Saturday,pref.Sunday];
@@ -33,38 +34,37 @@ const defPenalties = mapTimeDetails(penaltyIntervals);
 
 class Util {
 	static now() {
-		return { date: moment().format('YYYY.MM.DD'), time: moment().format('HH:mm') };
+		return { date: time_util.getMoment().format('YYYY.MM.DD'), time: time_util.getMoment().format('HH:mm') };
 	}
 
 	static format(day) {
-		return moment(day, 'DD.MM.YYYY').format('YYYY.MM.DD');
+		return time_util.getMoment(day, 'DD.MM.YYYY').format('YYYY.MM.DD');
 	}
 
 	static reformat(day) {
-		return moment(day, 'YYYY.MM.DD').format('DD.MM.YYYY');
+		return time_util.getMoment(day, 'YYYY.MM.DD').format('DD.MM.YYYY');
 	}
 
 	static checkInput(company_id, employee_id) {
 		return new Promise((resolve, rej) => {
 			dquery.getEmployeeEarliestWorkHour(company_id, employee_id).then(res => {
-				let result, in_time = moment('09:00:00', 'HH:mm:ss'), now = moment(), penaltyHours,
-					date = moment().format('YYYY.MM.DD');
+				let result, in_time = time_util.getMoment('09:00:00', 'HH:mm:ss'), now = time_util.getMoment(), penaltyHours,
+					date = time_util.getMoment().format('YYYY.MM.DD');
 				if (res.in_time) {
-					in_time = moment(res.in_time, 'HH:mm');
+					in_time = time_util.getMoment(res.in_time, 'HH:mm');
 				}
 
-				let diffMinutes = now.diff(in_time, 'minutes'), time = now.format('HH:mm:ss');
+				let diffMinutes = now.diff(in_time, 'minutes'), time = now.format('HH:mm:ss'),
+					lateHours = Math.trunc(now.diff(in_time, 'hours', true));
 
 				if (diffMinutes > 15) {
 					dquery.getEmployeeCustomLateTimes(employee_id)
 							  .then((result) => {
-							  	if (result && result.length) {
+							  	if (result && result.length)
 							  		penaltyHours = findPenalty(mapTimeDetails(result), time);
-							  	} else {
+							  	else
 							  		penaltyHours = findPenalty(defPenalties, time);
-							  	}
-
-							  	let lateHours = Math.round(diffMinutes / 60), lateMinutes = diffMinutes - 60 * lateHours;
+							  	let lateMinutes = diffMinutes - lateHours * 60;
 							  	resolve({ is_in_time: pref.NO, penaltyHours, lateHours, lateMinutes });
 							  });
 				} else resolve({ is_in_time: pref.YES, date });
@@ -73,11 +73,11 @@ class Util {
 	}
 
 	static checkOutput() {
-		let out_time = moment('18:00:00', 'HH:mm:ss'), now = moment(), status;
-	  let diffMinutes = out_time.diff(now, 'minutes'), time = now.format('HH:mm:ss');
+		let out_time = time_util.getMoment('18:00:00', 'HH:mm:ss'), now = time_util.getMoment();
+	  let earlyHours = Math.trunc(out_time.diff(now, 'hours', true)), diffMinutes = out_time.diff(now, 'minutes'),
+	  	  time = now.format('HH:mm:ss');
 	  if (diffMinutes > 0) {
-	  	let earlyHours = Math.round(diffMinutes / 60), earlyMinutes = diffMinutes - 60 * earlyHours;
-	  	return { is_in_time: pref.NO, earlyHours, earlyMinutes };
+	  	return { is_in_time: pref.NO, earlyHours, earlyMinutes: diffMinutes - earlyHours * 60 };
 	  }
 	  return { is_in_time: pref.YES };
 	}
@@ -85,11 +85,6 @@ class Util {
 	static getWeekDay(code) {
 		return _.find(weekDays, x => x.substring(0, 3).toLowerCase() == code);
 	}
-			// { $att_id: info.attendance_id, $action: info.action, $time: info.time, 
-			// 	$is_in_time: info.is_in_time, $reason: info.reason, 
-			// 	$user_reason: info.user_reason, $penalty: info.penalty }
-
-			//{ $emp_id: attendance.employee_id, $cmp_id: attendance.company_id, $date: attendance.date }
 
 	static makeAttendance(data) {
 		return new Promise((res, rej) => {
@@ -102,7 +97,7 @@ class Util {
 	                                 
 	    dquery.saveAttendance(param).then(() => {
 	    	param.attendance_info.action = 'out';
-	    	param.attendance_info.time = moment('09:00:00', 'HH:mm:ss').add(data.hours, 'hours').format('HH:mm');
+	    	param.attendance_info.time = time_util.getMoment('09:00:00', 'HH:mm:ss').add(data.hours, 'hours').format('HH:mm');
 	    	dquery.saveAttendance(param).then(() => {
 	    		res();
 	    	});

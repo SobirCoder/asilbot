@@ -17,7 +17,7 @@
 
 
 //start telegraf bot
-const Telegraf= require('telegraf');
+const Telegraf = require('telegraf');
 const Extra = require('telegraf/extra');
 const Markup = require('telegraf/markup');
 const session = require('telegraf/session');
@@ -26,6 +26,8 @@ const _ = require('underscore');
 const dquery = require('./db/dquery.js');
 const pref = require('./pref.js');
 const util = require('./util.js');
+const time_util = require('./time_util.js');
+const report = require('./report.js')
 require('dotenv').config();
 let chatId;
 
@@ -48,6 +50,7 @@ const admin_steps = [
     'company_actions',
     'company_actions2',
     'report',
+    'report_actions',
     'employees',
     'employee_settings',
     'add_employee',
@@ -144,7 +147,7 @@ bot.start(ctx => {
 
                 } else {
                     ctx.reply('You are not authorized to use this bot');
-                    // onUserStartup(ctx);
+                    onUserStartup(ctx);
                 }
             });
         }
@@ -178,7 +181,6 @@ function onRegister(ctx) {
             ctx.session.last_reg_step = reg_steps.indexOf('choose_from_another_company');
             dquery.getEmployee(ctx.session.company.company_id, msg).then((res) => {
                 dquery.saveCompanyEmployee({company_id: ctx.session.company.company_id,employee_id: res.employee_id }).then(() => {
-                    console.log('hello');
                     ctx.reply(`You are assigned to '${ctx.session.company.name}'.`);
                     ctx.session.reg_step = '';
                     ctx.session.last_reg_step = '';
@@ -253,9 +255,9 @@ function handleUserInput(ctx, msg) {
             break;
         case 'check':
             ctx.session.last_step = steps.indexOf('attendance');
-            ctx.session.action = msg.toLowerCase();
             let now = util.now();
             ctx.session.dateTime = now;
+            ctx.session.action = (msg != pref.BACK ? msg : ctx.session.last_check).toLowerCase();
             switch(msg != pref.BACK ? msg : ctx.session.last_check) {
                 case pref.CHECK_IN:
                     util.checkInput(ctx.session.employee.employee_id)
@@ -293,7 +295,7 @@ function handleUserInput(ctx, msg) {
                         ]).resize().extra());
                         ctx.session.step = steps.indexOf('not_in_time');
                     } else {
-                        data = { attendance: { employee_id: ctx.session.employee.employee_id, 
+                        data = { attendance: { employee_id: ctx.session.employee.employee_id,
                                                    company_id: ctx.session.company.company_id,
                                                    date: now.date },
                                 attendance_info: { action: ctx.session.action, time: now.time, 
@@ -461,15 +463,46 @@ function handleAdminInput(ctx, msg) {
             switch(msg != pref.BACK ? msg : ctx.session.last_ca) {
                 case pref.Employees:
                     ctx.reply('Choose an action',
-                        Markup.keyboard([[pref.Employee_Settings, pref.Add_Employee], 
-                                         [pref.Delete_Employee, pref.Detach_Employee],
-                                         [pref.BACK]]).resize().extra());
+                            Markup.keyboard([[pref.Employee_Settings, pref.Add_Employee], 
+                                             [pref.Delete_Employee, pref.Detach_Employee],
+                                             [pref.BACK]]).resize().extra());
                     ctx.session.admin_step = admin_steps.indexOf('employee_settings');
                     break;
                 case pref.Report:
+                    ctx.reply('Choose report interval:', 
+                             Markup.keyboard([[pref.Current_Week_Report, pref.Last_Week_Report], 
+                                             [pref.Current_Month_Report, pref.Last_Month_Report],
+                                             [pref.BACK]]).resize().extra());
+                    ctx.session.admin_step = admin_steps.indexOf('report_actions');
                     break;
             }
             if (msg != pref.BACK) ctx.session.last_ca = msg;
+            break;
+        case 'report_actions':
+            ctx.session.last_step = admin_steps.indexOf('company_actions');
+            let from, to, verb, sub_day;
+            switch(msg) {
+                case pref.Current_Week_Report:
+                    from = time_util.getMoment().startOf('week').add(1, 'days').format('YYYY.MM.DD');
+                    to = time_util.getMoment().endOf('week').add(1, 'days').format('YYYY.MM.DD');
+                    break;
+                case pref.Last_Week_Report:
+                    from = time_util.getMoment().startOf('week').subtract(6, 'days').format('YYYY.MM.DD');
+                    to = time_util.getMoment().endOf('week').subtract(6, 'days').format('YYYY.MM.DD');
+                    break;
+                case pref.Current_Month_Report:
+                    from = time_util.getMoment().startOf('month').format('YYYY.MM.DD');
+                    to = time_util.getMoment().endOf('month').format('YYYY.MM.DD');
+                    break;
+                case pref.Last_Month_Report:
+                    to = time_util.getMoment().startOf('month').subtract(1, 'days').format('YYYY.MM.DD');
+                    from = time_util.getMoment(to, 'YYYY.MM.DD').startOf('month').format('YYYY.MM.DD');
+                    break;
+                default: break;
+            }
+            if (!!from && !!to) {
+                report.getReport(bot, ctx.chat.id, { company_id: ctx.session.company_id, from, to });
+            }
             break;
         case 'employee_settings':
             ctx.session.last_step = admin_steps.indexOf('company_actions2');
@@ -705,7 +738,7 @@ function handleAdminInput(ctx, msg) {
         case 'make_attendance_save':
             ctx.session.last_step = admin_steps.indexOf('employee_setting');
             data = { company_id: ctx.session.company_id, employee_id: ctx.session.employee_id, 
-                         date: ctx.session.attendance_date, hours: msg };
+                         date: ctx.session.attendance_date, is_marked_by_admin: 'Y', hours: msg };
             util.makeAttendance(data).then(() => {
                 ctx.reply(`Attendance for ${util.reformat(data.date)} is done for this employee`, 
                             Markup.keyboard([[pref.BACK]]).resize().extra());
@@ -715,7 +748,7 @@ function handleAdminInput(ctx, msg) {
             ctx.session.last_step = admin_steps.indexOf('employee_setting');
             dquery.deleteEmployeeAttendance(ctx.session.company_id, ctx.session.employee_id, 
                                             util.format(msg.split(/\s+/)[0])).then(() => {
-                ctx.reply(`Attendance for ${msg} is deleted for this employee`, 
+                ctx.reply(`Attendance for ${msg} is deleted for this employee`,
                             Markup.keyboard([[pref.BACK]]).resize().extra());
             });
             break;
@@ -724,8 +757,8 @@ function handleAdminInput(ctx, msg) {
     }
 }
 
-//bot on text message
 bot.on('text', ctx => {
+    chatId = ctx.chat.id;
     let msg = ctx.message.text.trim();
     if (ctx.session.admin) {
         handleAdminInput(ctx, msg);
