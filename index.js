@@ -1,22 +1,3 @@
-//create telegram bot for control the company
-//every day bot takes attendance of employees
-//working day start from 9:00 am
-//working day end at 6:00 pm
-//employee might be last 15 minutes of working day
-//if employee is absent then he/she will be marked as absent
-//if employee is late then he/she will be marked as late
-//if employee leave early bot must ask him/her reason
-//every end day bot will send a report to admin
-//admin can see the report of every employee
-//admin can generate a report excel file
-//admin can announce to all employees
-//admin can send a message to all employees
-
-//create database json file
-//import db.json file
-
-
-//start telegraf bot
 const Telegraf = require('telegraf');
 const Extra = require('telegraf/extra');
 const Markup = require('telegraf/markup');

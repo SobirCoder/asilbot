@@ -328,12 +328,13 @@ class Dquery {
 	static saveAttendanceWithInfo(data, callback) {
 		let attendance = data.attendance, info = data.attendance_info;
 		let param = { $emp_id: attendance.employee_id, $cmp_id: attendance.company_id, 
-									$date: attendance.date, $imba: data.is_marked_by_admin };
+									$date: attendance.date, $imba: attendance.is_marked_by_admin };
 		db.run(`insert into attendances(employee_id, company_id, date, is_marked_by_admin)
-							values($emp_id, $cmp_id, $date, $imba)`, 
+							values($emp_id, $cmp_id, $date, $imba)`,
 		param,
 		(err, row) => {
 			if (err) throw err;
+			delete param.$imba;
 			db.get(`select attendance_id from attendances t 
 							 where t.employee_id = $emp_id
 							   and t.company_id = $cmp_id
@@ -388,18 +389,15 @@ class Dquery {
 						(err, row) => {
 							if (err) throw err;
 							let prev;
-							let total = 0;
+							let times = '';
 							if (row.times) {
-								total = _.chain(row.times.split(','))
-												 .map(x => time_util.getMoment(row.date + ' ' + x, 'YYYY.MM.DD HH:mm'))
-												 .reduce((memory, x, i) => {
-													 	if (i % 2 != 0) memory += x.diff(prev, 'hours', true);
-													 	prev = x;
-													 	return memory;
-												  }, 0).value();
+								times = _.chain(row.times.split(','))
+												 .chunk(2)
+												 .map(x => x.join('-'))
+												 .value().join(',');
 							}
 
-							dates.push(`${reformat(row.date)} worked: ${Math.round(total * 100) / 100} hours`);
+							dates.push(`${reformat(row.date)} times: ${times}`);
 						}, (err, count) => { 
 							if (err) throw err;
 							res(dates);

@@ -15,6 +15,7 @@ function calcWorkedHours(in_t, out, penalty) {
 	let x = out.diff(in_t, 'hours', true) - penalty;
  	if (in_t.diff(tu.getMoment('13:00', 'HH:mm'), 'minutes') <= 0 && 
  			out.diff(tu.getMoment('13:00', 'HH:mm'), 'minutes') > 0) x--;
+ 	if (x < 0) x = 0;
  	return x;
 }
 
@@ -70,8 +71,8 @@ class Report {
 													 					if (zt[i].is_marked_by_admin != 'Y') {
 													 						if (def_in.diff(in_t, 'minutes') > 0) in_t = def_in;
 														 					if (out.diff(def_out, 'minutes') > 0) out = def_out;
-																	 		worked_hours += calcWorkedHours(in_t, out, zt[i].penalty);
 													 					}
+													 					worked_hours += calcWorkedHours(in_t, out, zt[i].penalty);
 													 				}
 												 			} else if (i % 2 == 0) {
 												 				let idx;

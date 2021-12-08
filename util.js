@@ -88,11 +88,12 @@ class Util {
 
 	static makeAttendance(data) {
 		return new Promise((res, rej) => {
-			let param =  { attendance: { employee_id: data.employee_id, 
-	                                 company_id: data.company_id,
-	                                 date: data.date },
-	              attendance_info: { action: 'in', time: '09:00', 
-	                                 is_in_time: pref.YES }};
+			let param = { attendance: { employee_id: data.employee_id, 
+	                                company_id: data.company_id,
+	                                date: data.date,
+	                                is_marked_by_admin: data.is_marked_by_admin },
+	             attendance_info: { action: 'in', time: '09:00', 
+	                                is_in_time: pref.YES }};
 	    if (data.hours > 4) data.hours++;
 	                                 
 	    dquery.saveAttendance(param).then(() => {
