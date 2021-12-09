@@ -6,7 +6,7 @@ class TimeUtil {
 		if (!!date && !!format) m = moment(date, format);
 		else m = moment();
 
-		return m.utcOffset(5);
+		return m.utcOffset("+05:00");
 	}
 }
 
