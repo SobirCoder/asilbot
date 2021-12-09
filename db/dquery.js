@@ -440,7 +440,7 @@ class Dquery {
 			db.each(`select * from employee_custom_work_day_times t 
 						    where t.company_id = $cmp_id
 						      and t.employee_id = $emp_id`,
-					{ $cmp_id: company_id, $emp_id: employee_id }, 
+					{ $cmp_id: company_id, $emp_id: employee_id },
 					(err, row) => {
 						if (err) throw err;
 						dates.push([`${getWeekDay(row.week_day)} ${row.in_time}-${row.out_time}`]);

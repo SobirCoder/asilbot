@@ -45,10 +45,14 @@ class Util {
 		return time_util.getMoment(day, 'YYYY.MM.DD').format('DD.MM.YYYY');
 	}
 
+	static tzAdaptTime(time) {
+		return moment(time, 'HH:mm').subtract(5, 'hours').format('HH:mm');
+	}
+
 	static checkInput(company_id, employee_id) {
 		return new Promise((resolve, rej) => {
 			dquery.getEmployeeEarliestWorkHour(company_id, employee_id).then(res => {
-				let result, in_time = time_util.getMoment('09:00:00', 'HH:mm:ss'), now = time_util.getMoment(), penaltyHours,
+				let result, in_time = time_util.getMoment('04:00:00', 'HH:mm:ss'), now = time_util.getMoment(), penaltyHours,
 					date = time_util.getMoment().format('YYYY.MM.DD');
 				if (res.in_time) {
 					in_time = time_util.getMoment(res.in_time, 'HH:mm');
@@ -73,7 +77,7 @@ class Util {
 	}
 
 	static checkOutput() {
-		let out_time = time_util.getMoment('18:00:00', 'HH:mm:ss'), now = time_util.getMoment();
+		let out_time = time_util.getMoment('13:00:00', 'HH:mm:ss'), now = time_util.getMoment();
 	  let earlyHours = Math.trunc(out_time.diff(now, 'hours', true)), diffMinutes = out_time.diff(now, 'minutes'),
 	  	  time = now.format('HH:mm:ss');
 	  if (diffMinutes > 0) {
@@ -98,7 +102,7 @@ class Util {
 	                                 
 	    dquery.saveAttendance(param).then(() => {
 	    	param.attendance_info.action = 'out';
-	    	param.attendance_info.time = time_util.getMoment('09:00:00', 'HH:mm:ss').add(data.hours, 'hours').format('HH:mm');
+	    	param.attendance_info.time = time_util.getMoment('04:00:00', 'HH:mm:ss').add(data.hours, 'hours').format('HH:mm');
 	    	dquery.saveAttendance(param).then(() => {
 	    		res();
 	    	});

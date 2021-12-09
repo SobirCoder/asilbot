@@ -13,8 +13,8 @@ function addBorder(worksheet, index) {
 
 function calcWorkedHours(in_t, out, penalty) {
 	let x = out.diff(in_t, 'hours', true) - penalty;
- 	if (in_t.diff(tu.getMoment('13:00', 'HH:mm'), 'minutes') <= 0 && 
- 			out.diff(tu.getMoment('13:00', 'HH:mm'), 'minutes') > 0) x--;
+ 	if (in_t.diff(tu.getMoment('08:00', 'HH:mm'), 'minutes') <= 0 && 
+ 			out.diff(tu.getMoment('08:00', 'HH:mm'), 'minutes') > 0) x--;
  	if (x < 0) x = 0;
  	return x;
 }
@@ -23,7 +23,7 @@ class Report {
 	static async getReport(bot, chat_id, data) {
 		let dates = [], from_date = tu.getMoment(data.from, 'YYYY.MM.DD'), 
 				to_date = tu.getMoment(data.to, 'YYYY.MM.DD'), week_days = new Set(),
-				def_in = tu.getMoment('09:00', 'HH:mm'), def_out = tu.getMoment('18:00', 'HH:mm');
+				def_in = tu.getMoment('04:00', 'HH:mm'), def_out = tu.getMoment('13:00', 'HH:mm');
 
 		while (to_date.diff(from_date, 'days') >= 0) {
 			dates.push(from_date.format('YYYY.MM.DD'));
@@ -58,10 +58,10 @@ class Report {
 												 		let zt = _.sortBy(val, 'date'), worked_hours = 0;
 												 		for (let i = 0; i < zt.length; i++) {
 												 			if (!!zt[i + 1] && zt[i].action != zt[i + 1].action) {
-												 				let in_t = tu.getMoment(zt[i].time, 'HH:mm'), out = tu.getMoment(zt[i + 1].time, 'HH:mm'), tcwh;
+												 				let in_t = tu.getMoment(zt[i].time, 'HH:mm').subtract(5, 'hours'), out = tu.getMoment(zt[i + 1].time, 'HH:mm').subtract(5, 'hours'), tcwh;
 												 					if (cwh && (tcwh = cwh[in_t.format('ddd').toLowerCase()])) {
 													 					_.each(tcwh, k => {
-													 						let c_in = tu.getMoment(k[0], 'HH:mm'), c_out = tu.getMoment(k[1], 'HH:mm');
+													 						let c_in = tu.getMoment(k[0], 'HH:mm').subtract(5, 'hours'), c_out = tu.getMoment(k[1], 'HH:mm').subtract(5, 'hours');
 													 						if (zt[i].time > k[0]) c_in = in_t;
 													 						if (k[1] > zt[i + 1].time) c_out = out;
 													 						worked_hours += calcWorkedHours(c_in, c_out, 0);
@@ -92,7 +92,8 @@ class Report {
 							_.each(cwh, (val, key) => {
 								 let tm = 0;
 							 	 _.each(val, v => {
-							 	 	let in_t = tu.getMoment(v[0], 'HH:mm'), out = tu.getMoment(v[1], 'HH:mm');
+							 	 	let in_t = tu.getMoment(v[0], 'HH:mm').subtract(5, 'hours'), 
+							 	 			out = tu.getMoment(v[1], 'HH:mm').subtract(5, 'hours');
 							 	 	tm += calcWorkedHours(in_t, out, 0);
 							 	 });
 							 	 cwh[key] = Math.round(tm * 100) / 100;

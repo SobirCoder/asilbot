@@ -8,6 +8,7 @@ const dquery = require('./db/dquery.js');
 const pref = require('./pref.js');
 const util = require('./util.js');
 const time_util = require('./time_util.js');
+const moment = require('moment');
 const report = require('./report.js')
 require('dotenv').config();
 let chatId;
@@ -113,7 +114,7 @@ function saveAttendance(ctx, data) {
 
 bot.start(ctx => {
     chatId = ctx.chat.id;
-
+    
     dquery.foreignKeySupport().then(() => {
         if (ctx.from.id == process.env.TURNIKET_ID) {
             onUserStartup(ctx);
