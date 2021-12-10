@@ -1,5 +1,5 @@
 const ExcelJS = require('exceljs');
-const moment = require('moment');
+const moment = require('moment-timezone');
 const _ = require('underscore');
 const util = require('./util.js');
 const tu = require('./time_util.js');
@@ -13,8 +13,8 @@ function addBorder(worksheet, index) {
 
 function calcWorkedHours(in_t, out, penalty) {
 	let x = out.diff(in_t, 'hours', true) - penalty;
- 	if (in_t.diff(tu.getMoment('08:00', 'HH:mm'), 'minutes') <= 0 && 
- 			out.diff(tu.getMoment('08:00', 'HH:mm'), 'minutes') > 0) x--;
+ 	if (in_t.diff(tu.getMoment('13:00', 'HH:mm'), 'minutes') <= 0 && 
+ 			out.diff(tu.getMoment('13:00', 'HH:mm'), 'minutes') > 0) x--;
  	if (x < 0) x = 0;
  	return x;
 }
@@ -23,7 +23,7 @@ class Report {
 	static async getReport(bot, chat_id, data) {
 		let dates = [], from_date = tu.getMoment(data.from, 'YYYY.MM.DD'), 
 				to_date = tu.getMoment(data.to, 'YYYY.MM.DD'), week_days = new Set(),
-				def_in = tu.getMoment('04:00', 'HH:mm'), def_out = tu.getMoment('13:00', 'HH:mm');
+				def_in = tu.getMoment('09:00', 'HH:mm'), def_out = tu.getMoment('18:00', 'HH:mm');
 
 		while (to_date.diff(from_date, 'days') >= 0) {
 			dates.push(from_date.format('YYYY.MM.DD'));
@@ -63,12 +63,10 @@ class Report {
 												 				if (_.any(['workofoffice', 'approvedreason'], q => zt[i].reason == q)) in_time = '09:00';
 												 				if (_.any(['workofoffice', 'approvedreason'], q => zt[i+1].reason == q)) out_time = '18:00';
 
-												 				let in_t = tu.getMoment(in_time, 'HH:mm').subtract(5, 'hours'),
-												 						out = tu.getMoment(out_time, 'HH:mm').subtract(5, 'hours');
+												 				let in_t = tu.getMoment(in_time, 'HH:mm'), out = tu.getMoment(out_time, 'HH:mm');
 											 					if (cwh && (tcwh = cwh[in_t.format('ddd').toLowerCase()])) {
 												 					_.each(tcwh, k => {
-												 						let c_in = tu.getMoment(k[0], 'HH:mm').subtract(5, 'hours'), 
-												 								c_out = tu.getMoment(k[1], 'HH:mm').subtract(5, 'hours');
+												 						let c_in = tu.getMoment(k[0], 'HH:mm'), c_out = tu.getMoment(k[1], 'HH:mm');
 												 						if (in_time > k[0]) c_in = in_t;
 												 						if (k[1] > out_time) c_out = out;
 												 						worked_hours += calcWorkedHours(c_in, c_out, 0);
@@ -99,8 +97,8 @@ class Report {
 							_.each(cwh, (val, key) => {
 								 let tm = 0;
 							 	 _.each(val, v => {
-							 	 	let in_t = tu.getMoment(v[0], 'HH:mm').subtract(5, 'hours'), 
-							 	 			out = tu.getMoment(v[1], 'HH:mm').subtract(5, 'hours');
+							 	 	let in_t = tu.getMoment(v[0], 'HH:mm'), 
+							 	 			out = tu.getMoment(v[1], 'HH:mm');
 							 	 	tm += calcWorkedHours(in_t, out, 0);
 							 	 });
 							 	 cwh[key] = Math.round(tm * 100) / 100;

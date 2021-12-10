@@ -1,4 +1,4 @@
-const moment = require('moment');
+const moment = require('moment-timezone');
 
 class TimeUtil {
 	static getMoment(date, format) {
@@ -6,7 +6,7 @@ class TimeUtil {
 		if (!!date && !!format) m = moment(date, format);
 		else m = moment();
 
-		return m.utcOffset("+05:00");
+		return m.tz('Asia/Tashkent');
 	}
 }
 

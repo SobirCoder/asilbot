@@ -13,6 +13,7 @@
     "dotenv": "^10.0.0",
     "exceljs": "^4.3.0",
     "moment": "^2.29.1",
+    "moment-timezone": "^0.5.34",
     "sqlite3": "^5.0.2",
     "telegraf": "^3.39.0",
     "tempfile": "^3.0.0",

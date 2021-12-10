@@ -1,4 +1,4 @@
-const moment = require('moment');
+const moment = require('moment-timezone');
 const sqlite = require('sqlite3').verbose();
 const _ = require('underscore');
 const pref = require('../pref.js');
