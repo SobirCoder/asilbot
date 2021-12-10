@@ -51,29 +51,36 @@ class Report {
 												 .value();
 							let	 wh = _.chain(x.times.split(','))
 												 .map(t => { return t.split('-'); })
-												 .map(t => {  return { date: t[0], action: t[1], is_marked_by_admin: t[2], penalty: parseFloat(t[3]), time: t[4] }; })
+												 .map(t => {  return { date: t[0], action: t[1], reason: t[2], 
+												 											is_marked_by_admin: t[3], penalty: parseFloat(t[4]), time: t[5] }})
 												 .filter('date')
 												 .groupBy('date')
 												 .map((val, key) => {
 												 		let zt = _.sortBy(val, 'date'), worked_hours = 0;
 												 		for (let i = 0; i < zt.length; i++) {
 												 			if (!!zt[i + 1] && zt[i].action != zt[i + 1].action) {
-												 				let in_t = tu.getMoment(zt[i].time, 'HH:mm').subtract(5, 'hours'), out = tu.getMoment(zt[i + 1].time, 'HH:mm').subtract(5, 'hours'), tcwh;
-												 					if (cwh && (tcwh = cwh[in_t.format('ddd').toLowerCase()])) {
-													 					_.each(tcwh, k => {
-													 						let c_in = tu.getMoment(k[0], 'HH:mm').subtract(5, 'hours'), c_out = tu.getMoment(k[1], 'HH:mm').subtract(5, 'hours');
-													 						if (zt[i].time > k[0]) c_in = in_t;
-													 						if (k[1] > zt[i + 1].time) c_out = out;
-													 						worked_hours += calcWorkedHours(c_in, c_out, 0);
-													 					});
-													 					worked_hours -= zt[i].penalty;
-													 				} else {
-													 					if (zt[i].is_marked_by_admin != 'Y') {
-													 						if (def_in.diff(in_t, 'minutes') > 0) in_t = def_in;
-														 					if (out.diff(def_out, 'minutes') > 0) out = def_out;
-													 					}
-													 					worked_hours += calcWorkedHours(in_t, out, zt[i].penalty);
-													 				}
+												 				let in_time = zt[i].time, out_time = zt[i + 1].time, tcwh;
+												 				if (_.any(['workofoffice', 'approvedreason'], q => zt[i].reason == q)) in_time = '09:00';
+												 				if (_.any(['workofoffice', 'approvedreason'], q => zt[i+1].reason == q)) out_time = '18:00';
+
+												 				let in_t = tu.getMoment(in_time, 'HH:mm').subtract(5, 'hours'),
+												 						out = tu.getMoment(out_time, 'HH:mm').subtract(5, 'hours');
+											 					if (cwh && (tcwh = cwh[in_t.format('ddd').toLowerCase()])) {
+												 					_.each(tcwh, k => {
+												 						let c_in = tu.getMoment(k[0], 'HH:mm').subtract(5, 'hours'), 
+												 								c_out = tu.getMoment(k[1], 'HH:mm').subtract(5, 'hours');
+												 						if (in_time > k[0]) c_in = in_t;
+												 						if (k[1] > out_time) c_out = out;
+												 						worked_hours += calcWorkedHours(c_in, c_out, 0);
+												 					});
+												 					worked_hours -= zt[i].penalty;
+												 				} else {
+												 					if (zt[i].is_marked_by_admin != 'Y') {
+												 						if (def_in.diff(in_t, 'minutes') > 0) in_t = def_in;
+													 					if (out.diff(def_out, 'minutes') > 0) out = def_out;
+												 					}
+												 					worked_hours += calcWorkedHours(in_t, out, zt[i].penalty);
+												 				}
 												 			} else if (i % 2 == 0) {
 												 				let idx;
 												 				if (zt[i].action == 'out') idx = i;

@@ -515,6 +515,7 @@ class Dquery {
 										 		where d.company_id = e.company_id
 										 	    and d.employee_id = e.employee_id) custom_work_hours,
 										 	(select group_concat(k.date || '-' || s.action || '-' ||
+										 						(case when s.reason is not null then s.reason else 'N' end) || '-' ||
 										 						(case when k.is_marked_by_admin is not null then k.is_marked_by_admin else 'N' end) || '-' ||
 										 						(case when s.penalty is not null then s.penalty else '0' end)
 										 						|| '-' || s.time, ',')
